@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>بازی حافظه تصویری کودکان</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;font-family:Tahoma,Arial,sans-serif;
+ background:linear-gradient(135deg,#e0f7fa,#fce4ec);
+ color:#333;text-align:center;padding:15px
+}
+.container{max-width:1000px;margin:auto}
+h1{color:#6a1b9a}
+.panel{
+ background:white;padding:18px;border-radius:20px;
+ margin:15px auto;box-shadow:0 5px 18px #0001
+}
+.stats{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+.stat{background:#f3e5f5;padding:12px 18px;border-radius:14px}
+button{
+ border:0;border-radius:12px;padding:11px 18px;
+ background:#8e44ad;color:white;font-size:15px;
+ cursor:pointer;margin:5px
+}
+button:hover{opacity:.85}
+button:disabled{opacity:.5;cursor:not-allowed}
+.grid{
+ display:grid;grid-template-columns:repeat(5,minmax(55px,1fr));
+ gap:10px;max-width:700px;margin:20px auto
+}
+.card{
+ aspect-ratio:1/1;background:#8e44ad;border-radius:15px;
+ display:flex;align-items:center;justify-content:center;
+ cursor:pointer;font-size:clamp(25px,6vw,45px);
+ box-shadow:0 4px 7px #0002;overflow:hidden;
+ user-select:none
+}
+.card.open,.card.matched{background:white;border:3px solid #8e44ad}
+.card.matched{border-color:#4caf50;background:#e8f5e9}
+.card img{width:100%;height:100%;object-fit:cover}
+.hidden{display:none}
+input{padding:10px;border:1px solid #ccc;border-radius:9px;margin:5px}
+#message{font-weight:bold;color:#6a1b9a;min-height:28px}
+.admin-list{
+ display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+ gap:10px;margin-top:15px
+}
+.admin-item{background:#f5f5f5;padding:8px;border-radius:12px}
+.admin-item img{width:70px;height:70px;object-fit:cover;border-radius:8px}
+@media(max-width:500px){
+ .grid{gap:6px}
+ .card{border-radius:9px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🎈 بازی حافظه تصویری 🎈</h1>
+<p>دو تصویر یکسان را پیدا کن و امتیاز بگیر!</p>
+
+<div class="panel">
+ <div class="stats">
+  <div class="stat">⭐ امتیاز: <b id="score">0</b></div>
+  <div class="stat">🎯 تلاش: <b id="attempts">0</b></div>
+  <div class="stat">⏱ زمان: <b id="timer">0</b> ثانیه</div>
+  <div class="stat">✅ جفت‌ها: <b id="pairs">0</b> از <b id="total">20</b></div>
+ </div>
+ <button onclick="startGame()">شروع بازی جدید 🔄</button>
+ <button onclick="showTab('game')">صفحه بازی</button>
+ <button onclick="showTab('admin')">مدیریت تصاویر ⚙️</button>
+</div>
+
+<div id="game">
+ <div id="message">برای شروع بازی روی دکمه شروع بزن.</div>
+ <div class="grid" id="board"></div>
+</div>
+
+<div id="admin" class="panel hidden">
+ <h2>🖼 مدیریت تصاویر</h2>
+ <p>تصاویر را از گوشی یا رایانه انتخاب کن. هر تصویر دو کارت همسان می‌سازد.</p>
+ <input type="file" id="imageInput" accept="image/*" multiple>
+ <button onclick="addImages()">افزودن تصاویر</button>
+ <button onclick="resetImages()">بازگشت به تصاویر پیش‌فرض</button>
+ <div id="adminList" class="admin-list"></div>
+</div>
+</div>
+
+<script>
+const defaults=[
+ ["🐱","گربه"],["🐶","سگ"],["🦁","شیر"],["🐸","قورباغه"],
+ ["🐼","پاندا"],["🐵","میمون"],["🐰","خرگوش"],["🦊","روباه"],
+ ["🐻","خرس"],["🐯","ببر"],["🍎","سیب"],["🍌","موز"],
+ ["🍓","توت‌فرنگی"],["🍇","انگور"],["🍉","هندوانه"],
+ ["🚗","ماشین"],["✈️","هواپیما"],["⚽","توپ"],
+ ["🌞","خورشید"],["⭐","ستاره"]
+];
+
+const STORAGE="memory_game_pair_data_v2";
+let items=[];
+let cards=[],first=null,second=null,locked=false;
+let score=0,attempts=0,found=0,seconds=0;
+let timer=null,started=false;
+
+function uid(){
+ return "pair_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+}
+function loadItems(){
+ try{
+  const saved=localStorage.getItem(STORAGE);
+  items=saved?JSON.parse(saved):[];
+ }catch(e){items=[]}
+ if(!items.length) resetImages(false);
+}
+function saveItems(){
+ localStorage.setItem(STORAGE,JSON.stringify(items));
+}
+function resetImages(save=true){
+ items=defaults.map(([emoji,name])=>({
+  id:uid(),name,emoji,src:null
+ }));
+ if(save) saveItems();
+ renderAdmin();
+ startGame();
+}
+function makeCards(){
+ const result=[];
+ items.forEach(item=>{
+  result.push({pairId:item.id,item});
+  result.push({pairId:item.id,item});
+ });
+ return result.sort(()=>Math.random()-.5);
+}
+function startGame(){
+ clearInterval(timer);
+ cards=makeCards();
+ first=null;second=null;locked=false;
+ score=0;attempts=0;found=0;seconds=0;started=false;
+ updateStats();
+ document.getElementById("message").textContent="کارت‌ها را انتخاب کن و جفت‌های یکسان را پیدا کن!";
+ const board=document.getElementById("board");
+ board.innerHTML="";
+ cards.forEach((card,index)=>{
+  const el=document.createElement("div");
+  el.className="card";
+  el.textContent="❓";
+  el.dataset.index=index;
+  el.onclick=()=>flipCard(index,el);
+  board.appendChild(el);
+ });
+ document.getElementById("total").textContent=items.length;
+}
+function flipCard(index,el){
+ if(locked||el.classList.contains("open")||el.classList.contains("matched"))return;
+ if(!started){
+  started=true;
+  timer=setInterval(()=>{
+   seconds++;
+   updateStats();
+  },1000);
+ }
+ const card=cards[index];
+ el.classList.add("open");
+ el.innerHTML="";
+ if(card.item.src){
+  const img=document.createElement("img");
+  img.src=card.item.src;
+  el.appendChild(img);
+ }else{
+  el.textContent=card.item.emoji;
+ }
+ if(!first){
+  first={card,el};
+  return;
+ }
+ second={card,el};
+ attempts++;
+ if(first.card.pairId===second.card.pairId){
+  first.el.classList.add("matched");
+  second.el.classList.add("matched");
+  score+=100;found++;
+  first=null;second=null;
+  updateStats();
+  if(found===items.length){
+   clearInterval(timer);
+   document.getElementById("message").textContent=
+    "🎉 آفرین! همه جفت‌ها را پیدا کردی! امتیاز تو: "+score;
+  }else{
+   document.getElementById("message").textContent="👏 آفرین! یک جفت درست پیدا کردی.";
+  }
+ }else{
+  locked=true;
+  document.getElementById("message").textContent="دوباره تلاش کن! 😊";
+  setTimeout(()=>{
+   first.el.classList.remove("open");
+   second.el.classList.remove("open");
+   first.el.textContent="❓";
+   second.el.textContent="❓";
+   first=null;second=null;locked=false;
+  },850);
+ }
+ updateStats();
+}
+function updateStats(){
+ document.getElementById("score").textContent=score;
+ document.getElementById("attempts").textContent=attempts;
+ document.getElementById("pairs").textContent=found;
+ document.getElementById("timer").textContent=seconds;
+}
+function showTab(tab){
+ document.getElementById("game").classList.toggle("hidden",tab!=="game");
+ document.getElementById("admin").classList.toggle("hidden",tab!=="admin");
+ if(tab==="admin")renderAdmin();
+}
+function addImages(){
+ const files=[...document.getElementById("imageInput").files];
+ if(!files.length){alert("ابتدا تصویر انتخاب کن.");return}
+ if(items.length+files.length>60){
+  alert("حداکثر ۶۰ تصویر می‌توانی اضافه کنی.");return;
+ }
+ let remaining=files.length;
+ files.forEach(file=>{
+  if(!file.type.startsWith("image/")){
+   remaining--;
+   return;
+  }
+  const reader=new FileReader();
+  reader.onload=()=>{
+   items.push({
+    id:uid(),name:file.name,emoji:"🖼️",src:reader.result
+   });
+   remaining--;
+   if(remaining===0){
+    saveItems();renderAdmin();startGame();
+    document.getElementById("imageInput").value="";
+    alert("تصاویر اضافه شدند.");
+   }
+  };
+  reader.onerror=()=>{
+   remaining--;
+   if(remaining===0)alert("خواندن بعضی تصاویر ناموفق بود.");
+  };
+  reader.readAsDataURL(file);
+ });
+}
+function deleteItem(id){
+ if(!confirm("این تصویر و جفت آن حذف شود؟"))return;
+ items=items.filter(x=>x.id!==id);
+ saveItems();renderAdmin();startGame();
+}
+function renderAdmin(){
+ const list=document.getElementById("adminList");
+ if(!list)return;
+ list.innerHTML="";
+ items.forEach(item=>{
+  const div=document.createElement("div");
+  div.className="admin-item";
+  if(item.src){
+   const img=document.createElement("img");
+   img.src=item.src;div.appendChild(img);
+  }else{
+   const emoji=document.createElement("div");
+   emoji.style.fontSize="40px";
+   emoji.textContent=item.emoji;div.appendChild(emoji);
+  }
+  const name=document.createElement("div");
+  name.textContent=item.name;
+  div.appendChild(name);
+  const del=document.createElement("button");
+  del.textContent="حذف";
+  del.onclick=()=>deleteItem(item.id);
+  div.appendChild(del);
+  list.appendChild(div);
+ });
+}
+loadItems();
+renderAdmin();
+startGame();
+</script>
+</body>
+</html>
